@@ -1,0 +1,6 @@
+---
+alwaysApply: true
+---
+
+约定：所有用于测试的脚本文件都应放在 test 目录下。如果没有该目录，自动创建该目录。测试脚本可以使用任何编程语言编写，但必须遵循命名约定，即文件名应以 "test-" 开头，并包含适当的文件扩展名以指示所使用的编程语言。
+例如，test/test-script.js, test/integration-test.py 等。

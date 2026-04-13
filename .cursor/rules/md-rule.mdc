@@ -1,0 +1,6 @@
+---
+alwaysApply: true
+---
+约定：所有除了readme.md的 *.md 文件都应放在 docs 文件夹下。如果没有该目录，自动创建该目录。Markdown 文件可以用于各种用途，但必须遵循命名约定，即文件名应清晰地反映其内容或用途。
+例如，docs/usage.md, docs/changelog.md 等。
+readme.md 可放在项目根目录，其余 Markdown 文件按照分类统一放在 docs 目录。

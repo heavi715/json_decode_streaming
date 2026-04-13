@@ -1,0 +1,17 @@
+---
+alwaysApply: true
+---
+python 环境为
+source .venv/bin/activate
+
+包管理使用uv命令,
+安装新的包使用 uv pip install 包名
+
+
+node 使用
+export PATH="/Users/heavi/.nvm/versions/node/v22.14.0/bin:$PATH"
+
+例如：
+cd /Users/heavi/project/aigc/ai-teacher/frontend-admin
+export PATH="/Users/heavi/.nvm/versions/node/v22.14.0/bin:$PATH"
+npm run build
