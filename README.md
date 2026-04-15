@@ -2,6 +2,8 @@
 
 A multi-language streaming JSON repair toolkit for AI outputs that may be truncated near the end.
 
+[中文文档](docs/readme-zh.md)
+
 Policy used in this project is `strict_prefix`:
 
 - keep only the longest safe prefix from the beginning,
@@ -15,9 +17,30 @@ Policy used in this project is `strict_prefix`:
 - Go: `golang/repair_json.go`
 - PHP: `php/RepairJson.php`
 
-## Package for direct use
+## Install in other projects
 
-You can build distributable packages for each language from this repo:
+Current published status:
+
+- Python (PyPI): available
+- JavaScript (npm): available
+- Go module: available
+- PHP (Packagist): may have indexing delay; VCS fallback is available
+
+Direct remote install:
+
+- Python: `pip install json-decode-streaming`
+- JavaScript: `npm install json-decode-streaming`
+- Go: `go get github.com/heavi715/json_decode_streaming@v0.1.6`
+- PHP (when Packagist is indexed): `composer require heavi/json-decode-streaming:^0.1`
+
+PHP fallback install (always works via VCS):
+
+- `composer config repositories.json_decode_streaming vcs https://github.com/heavi715/json_decode_streaming.git`
+- `composer require heavi/json-decode-streaming:v0.1.6`
+
+## Build distributable artifacts locally
+
+Build packages from source:
 
 - Python wheel/sdist:
   - `make package-python`
@@ -28,56 +51,18 @@ You can build distributable packages for each language from this repo:
 - PHP Composer archive:
   - `make package-php`
   - output: `php/heavi-json-decode-streaming-*.zip`
-- Go module:
+- Go module check:
   - `make package-go` (checks module is importable/buildable)
 
 Build everything:
 
 - `make package-all`
 
-Quick usage after packaging:
+Install from local artifacts:
 
 - Python: `pip install python/dist/*.whl`
 - JavaScript: `npm install ./javascript/*.tgz`
-- PHP: `composer config repositories.local artifact ./php && composer require heavi/json-decode-streaming:0.1.0`
-- Go: publish module path first, then `go get <your-module-path>`
-
-## Simplest integration in other projects
-
-If your goal is "use immediately with minimal setup", use this order:
-
-1) **Single-file copy (simplest, no package registry needed)**  
-Copy one file into your target project:
-
-- Python: copy `python/repair_json.py`
-- JavaScript: copy `javascript/repairJson.js`
-- PHP: copy `php/RepairJson.php`
-- Go: copy `golang/repair_json.go`
-
-Then call the same APIs described in this README:
-
-- Python: `repair_json_strict_prefix(...)`
-- JavaScript: `repairJsonStrictPrefix(...)`
-- PHP: `repair_json_strict_prefix(...)`
-- Go: `RepairJSONStrictPrefix(...)`
-
-2) **Install from built artifacts (still simple, more standardized)**
-
-- Python:
-  - in this repo: `make package-python`
-  - in target project: `pip install /path/to/json_decode_streaming/python/dist/*.whl`
-- JavaScript:
-  - in this repo: `make package-javascript`
-  - in target project: `npm install /path/to/json_decode_streaming/javascript/json-decode-streaming-0.1.0.tgz`
-- PHP:
-  - in this repo: `make package-php`
-  - in target project:
-    - `composer config repositories.local artifact /path/to/json_decode_streaming/php`
-    - `composer require heavi/json-decode-streaming:0.1.0`
-
-3) **Source install from Git (Python only, one command)**
-
-- `pip install "git+<your-repo-url>.git#subdirectory=python"`
+- PHP: `composer config repositories.local artifact ./php && composer require heavi/json-decode-streaming:*`
 
 ## Example behavior
 
