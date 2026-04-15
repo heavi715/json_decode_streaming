@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	jsonrepair "json_decode_streaming/golang"
+	jsonrepair "github.com/heavi715/json_decode_streaming/golang"
 )
 
 func buildSamples() map[string]string {

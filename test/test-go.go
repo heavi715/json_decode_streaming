@@ -6,7 +6,7 @@ import (
 	"os"
 	"reflect"
 
-	jsonrepair "json_decode_streaming/golang"
+	jsonrepair "github.com/heavi715/json_decode_streaming/golang"
 )
 
 type testCase struct {
