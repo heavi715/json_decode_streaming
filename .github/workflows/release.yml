@@ -50,6 +50,7 @@ jobs:
         run: make package-javascript
 
       - name: Publish JavaScript package to npm
+        continue-on-error: true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |

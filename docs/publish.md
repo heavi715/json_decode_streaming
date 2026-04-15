@@ -66,6 +66,8 @@ Required repository secrets:
 - `NPM_TOKEN`
 - optional `PACKAGIST_UPDATE_URL`
 
+For npm publishing on accounts with 2FA enabled, use an automation/granular token that can bypass 2FA for publish operations.
+
 Quick interactive setup (recommended, avoids putting tokens in shell history):
 
 - `make release-setup-secrets`
