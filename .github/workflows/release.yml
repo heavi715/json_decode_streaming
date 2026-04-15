@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NODE_VERSION: "22"
+      PYTHON_VERSION: "3.12"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Build Python package
+        run: make package-python
+
+      - name: Publish Python package to PyPI
+        if: ${{ secrets.TWINE_PASSWORD != '' }}
+        env:
+          TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+        run: |
+          uv pip install twine
+          twine upload python/dist/*
+
+      - name: Build JavaScript package
+        run: make package-javascript
+
+      - name: Publish JavaScript package to npm
+        if: ${{ secrets.NPM_TOKEN != '' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd javascript
+          npm publish --access public
+
+      - name: Validate PHP package metadata
+        run: make package-php
+
+      - name: Trigger Packagist update webhook
+        if: ${{ secrets.PACKAGIST_UPDATE_URL != '' }}
+        run: curl -X POST "${{ secrets.PACKAGIST_UPDATE_URL }}"
+
+      - name: Verify Go module layout
+        run: make package-go

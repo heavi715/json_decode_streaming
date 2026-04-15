@@ -1,0 +1,30 @@
+{
+  "name": "heavi/json-decode-streaming",
+  "description": "Strict-prefix JSON repair utility for streaming AI output.",
+  "type": "library",
+  "license": "MIT",
+  "keywords": [
+    "json",
+    "streaming",
+    "repair",
+    "ai"
+  ],
+  "authors": [
+    {
+      "name": "json_decode_streaming contributors"
+    }
+  ],
+  "homepage": "https://github.com/heavi715/json_decode_streaming",
+  "support": {
+    "issues": "https://github.com/heavi715/json_decode_streaming/issues",
+    "source": "https://github.com/heavi715/json_decode_streaming"
+  },
+  "autoload": {
+    "files": [
+      "RepairJson.php"
+    ]
+  },
+  "require": {
+    "php": ">=8.1"
+  }
+}

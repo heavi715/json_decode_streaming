@@ -1,0 +1,25 @@
+{
+  "name": "json-decode-streaming",
+  "version": "0.1.0",
+  "description": "Strict-prefix JSON repair utility for streaming AI output.",
+  "main": "repairJson.js",
+  "type": "commonjs",
+  "files": [
+    "repairJson.js"
+  ],
+  "keywords": [
+    "json",
+    "streaming",
+    "repair",
+    "ai"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/heavi715/json_decode_streaming#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/heavi715/json_decode_streaming.git"
+  },
+  "bugs": {
+    "url": "https://github.com/heavi715/json_decode_streaming/issues"
+  }
+}

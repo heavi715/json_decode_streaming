@@ -1,9 +1,77 @@
 package jsonrepair
 
-import "regexp"
+import "encoding/json"
 
-var numberRe = regexp.MustCompile(`^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?`)
-var hex4Re = regexp.MustCompile(`^[0-9a-fA-F]{4}$`)
+func isHex4At(text string, start int) bool {
+	if start+4 > len(text) {
+		return false
+	}
+	for k := 0; k < 4; k++ {
+		c := text[start+k]
+		isDigit := c >= '0' && c <= '9'
+		isLowerHex := c >= 'a' && c <= 'f'
+		isUpperHex := c >= 'A' && c <= 'F'
+		if !isDigit && !isLowerHex && !isUpperHex {
+			return false
+		}
+	}
+	return true
+}
+
+func scanNumberEnd(text string, start int) int {
+	n := len(text)
+	i := start
+
+	if i < n && text[i] == '-' {
+		i++
+		if i >= n {
+			return -1
+		}
+	}
+	if i >= n {
+		return -1
+	}
+
+	if text[i] == '0' {
+		i++
+	} else if text[i] >= '1' && text[i] <= '9' {
+		i++
+		for i < n && text[i] >= '0' && text[i] <= '9' {
+			i++
+		}
+	} else {
+		return -1
+	}
+
+	if i < n && text[i] == '.' {
+		if i+1 >= n || !(text[i+1] >= '0' && text[i+1] <= '9') {
+			return i - 1
+		}
+		i += 2
+		for i < n && text[i] >= '0' && text[i] <= '9' {
+			i++
+		}
+	}
+
+	if i < n && (text[i] == 'e' || text[i] == 'E') {
+		if i+1 >= n {
+			return i - 1
+		}
+		j := i + 1
+		if text[j] == '+' || text[j] == '-' {
+			j++
+		}
+		if j >= n || !(text[j] >= '0' && text[j] <= '9') {
+			return i - 1
+		}
+		i = j + 1
+		for i < n && text[i] >= '0' && text[i] <= '9' {
+			i++
+		}
+	}
+
+	return i - 1
+}
 
 func RepairJSONStrictPrefix(text string) string {
 	stack := make([]string, 0)
@@ -50,8 +118,7 @@ func RepairJSONStrictPrefix(text string) string {
 						brokeEarly = true
 						break
 					}
-					hex := text[i+1 : i+5]
-					if !hex4Re.MatchString(hex) {
+					if !isHex4At(text, i+1) {
 						brokeEarly = true
 						break
 					}
@@ -111,12 +178,11 @@ func RepairJSONStrictPrefix(text string) string {
 				continue
 			}
 			if (ch >= '0' && ch <= '9') || ch == '-' {
-				match := numberRe.FindString(text[i:])
-				if match == "" {
+				end := scanNumberEnd(text, i)
+				if end < i {
 					brokeEarly = true
 					break
 				}
-				end := i + len(match) - 1
 				i = end + 1
 				completeValue(end)
 				continue
@@ -238,4 +304,43 @@ func RepairJSONStrictPrefix(text string) string {
 	}
 
 	return base + closers
+}
+
+func RepairJSONStrictPrefixWithOption(text string, returnObject bool) (any, error) {
+	if !returnObject {
+		return RepairJSONStrictPrefix(text), nil
+	}
+	var parsedOriginal any
+	if err := json.Unmarshal([]byte(text), &parsedOriginal); err == nil {
+		return parsedOriginal, nil
+	}
+	repaired := RepairJSONStrictPrefix(text)
+	if repaired == "" {
+		return nil, nil
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(repaired), &parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+func RepairJSONStrictPrefixWithAppendOption(text string, appendContent string, returnObject bool) (any, error) {
+	return RepairJSONStrictPrefixWithOption(text+appendContent, returnObject)
+}
+
+func RepairJSONStrictPrefixBoth(text string) (string, any, error) {
+	repaired := RepairJSONStrictPrefix(text)
+	if repaired == "" {
+		return repaired, nil, nil
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(repaired), &parsed); err != nil {
+		return repaired, nil, err
+	}
+	return repaired, parsed, nil
+}
+
+func RepairJSONStrictPrefixBothWithAppend(text string, appendContent string) (string, any, error) {
+	return RepairJSONStrictPrefixBoth(text + appendContent)
 }

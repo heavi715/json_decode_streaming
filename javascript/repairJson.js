@@ -1,6 +1,63 @@
-const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/;
+function isHex4At(text, start) {
+  if (start + 4 > text.length) return false;
+  for (let k = 0; k < 4; k += 1) {
+    const ch = text[start + k];
+    const isDigit = ch >= "0" && ch <= "9";
+    const isLowerHex = ch >= "a" && ch <= "f";
+    const isUpperHex = ch >= "A" && ch <= "F";
+    if (!isDigit && !isLowerHex && !isUpperHex) return false;
+  }
+  return true;
+}
 
-function repairJsonStrictPrefix(text) {
+function scanNumberEnd(text, start) {
+  const n = text.length;
+  let i = start;
+
+  if (i < n && text[i] === "-") {
+    i += 1;
+    if (i >= n) return -1;
+  }
+
+  if (i >= n) return -1;
+  if (text[i] === "0") {
+    i += 1;
+  } else if (text[i] >= "1" && text[i] <= "9") {
+    i += 1;
+    while (i < n && text[i] >= "0" && text[i] <= "9") i += 1;
+  } else {
+    return -1;
+  }
+
+  if (i < n && text[i] === ".") {
+    if (i + 1 >= n || !(text[i + 1] >= "0" && text[i + 1] <= "9")) return i - 1;
+    i += 2;
+    while (i < n && text[i] >= "0" && text[i] <= "9") i += 1;
+  }
+
+  if (i < n && (text[i] === "e" || text[i] === "E")) {
+    if (i + 1 >= n) return i - 1;
+    let j = i + 1;
+    if (text[j] === "+" || text[j] === "-") j += 1;
+    if (j >= n || !(text[j] >= "0" && text[j] <= "9")) return i - 1;
+    i = j + 1;
+    while (i < n && text[i] >= "0" && text[i] <= "9") i += 1;
+  }
+
+  return i - 1;
+}
+
+function repairJsonStrictPrefix(text, returnObject = false, appendContent = "") {
+  if (appendContent !== "") {
+    text += appendContent;
+  }
+  if (returnObject) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      // Fall back to repaired parse path.
+    }
+  }
   const stack = [];
   let state = "root_value";
   let inString = false;
@@ -45,8 +102,7 @@ function repairJsonStrictPrefix(text) {
             brokeEarly = true;
             break;
           }
-          const hex = text.slice(i + 1, i + 5);
-          if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+          if (!isHex4At(text, i + 1)) {
             brokeEarly = true;
             break;
           }
@@ -74,7 +130,7 @@ function repairJsonStrictPrefix(text) {
       continue;
     }
 
-    if (/\s/.test(ch)) {
+    if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
       i += 1;
       continue;
     }
@@ -105,13 +161,12 @@ function repairJsonStrictPrefix(text) {
         i += 1;
         continue;
       }
-      if ("-0123456789".includes(ch)) {
-        const m = text.slice(i).match(NUMBER_RE);
-        if (!m) {
+      if (ch === "-" || (ch >= "0" && ch <= "9")) {
+        const end = scanNumberEnd(text, i);
+        if (end < i) {
           brokeEarly = true;
           break;
         }
-        const end = i + m[0].length - 1;
         i = end + 1;
         completeValue(end);
         continue;
@@ -229,7 +284,22 @@ function repairJsonStrictPrefix(text) {
     .map((kind) => (kind === "object" ? "}" : "]"))
     .join("");
 
-  return `${base}${closers}`;
+  const repaired = `${base}${closers}`;
+  if (!returnObject) {
+    return repaired;
+  }
+  if (repaired === "") {
+    return null;
+  }
+  return JSON.parse(repaired);
 }
 
-module.exports = { repairJsonStrictPrefix };
+function repairJsonStrictPrefixBoth(text, appendContent = "") {
+  const repaired = repairJsonStrictPrefix(text, false, appendContent);
+  if (repaired === "") {
+    return [repaired, null];
+  }
+  return [repaired, JSON.parse(repaired)];
+}
+
+module.exports = { repairJsonStrictPrefix, repairJsonStrictPrefixBoth };

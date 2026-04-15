@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 
 	jsonrepair "json_decode_streaming/golang"
 )
@@ -34,6 +35,47 @@ func main() {
 			failed = true
 			continue
 		}
+		repairedObject, err := jsonrepair.RepairJSONStrictPrefixWithOption(tc.Input, true)
+		if err != nil {
+			fmt.Printf("[FAIL] case #%d: object parse failed: %v\n", idx, err)
+			failed = true
+			continue
+		}
+		var expectedObject any
+		if tc.Expected != "" {
+			if err := json.Unmarshal([]byte(tc.Expected), &expectedObject); err != nil {
+				fmt.Printf("[FAIL] case #%d: expected parse failed: %v\n", idx, err)
+				failed = true
+				continue
+			}
+		}
+		if !reflect.DeepEqual(repairedObject, expectedObject) {
+			fmt.Printf("[FAIL] case #%d: object output mismatch\n", idx)
+			fmt.Printf("  actual  : %#v\n", repairedObject)
+			fmt.Printf("  expected: %#v\n", expectedObject)
+			failed = true
+			continue
+		}
+		repairedBoth, repairedBothObject, err := jsonrepair.RepairJSONStrictPrefixBoth(tc.Input)
+		if err != nil {
+			fmt.Printf("[FAIL] case #%d: both parse failed: %v\n", idx, err)
+			failed = true
+			continue
+		}
+		if repairedBoth != tc.Expected {
+			fmt.Printf("[FAIL] case #%d: both output mismatch\n", idx)
+			fmt.Printf("  actual  : %s\n", repairedBoth)
+			fmt.Printf("  expected: %s\n", tc.Expected)
+			failed = true
+			continue
+		}
+		if !reflect.DeepEqual(repairedBothObject, expectedObject) {
+			fmt.Printf("[FAIL] case #%d: both object output mismatch\n", idx)
+			fmt.Printf("  actual  : %#v\n", repairedBothObject)
+			fmt.Printf("  expected: %#v\n", expectedObject)
+			failed = true
+			continue
+		}
 		if repaired != "" {
 			var parsed any
 			if err := json.Unmarshal([]byte(repaired), &parsed); err != nil {
@@ -42,6 +84,36 @@ func main() {
 				fmt.Printf("  expected: %s\n", tc.Expected)
 				failed = true
 			}
+		}
+	}
+
+	appendBase := `{"a":"1"`
+	appendTail := `,"b":2}`
+	expectedAppend := `{"a":"1","b":2}`
+	appendOut, err := jsonrepair.RepairJSONStrictPrefixWithAppendOption(appendBase, appendTail, false)
+	if err != nil {
+		fmt.Printf("[FAIL] append case: append string failed: %v\n", err)
+		failed = true
+	} else if appendOut.(string) != expectedAppend {
+		fmt.Printf("[FAIL] append case: append output mismatch\n")
+		fmt.Printf("  actual  : %s\n", appendOut.(string))
+		fmt.Printf("  expected: %s\n", expectedAppend)
+		failed = true
+	}
+	appendObj, err := jsonrepair.RepairJSONStrictPrefixWithAppendOption(appendBase, appendTail, true)
+	if err != nil {
+		fmt.Printf("[FAIL] append case: append object failed: %v\n", err)
+		failed = true
+	} else {
+		var expectedObj any
+		if err := json.Unmarshal([]byte(expectedAppend), &expectedObj); err != nil {
+			fmt.Printf("[FAIL] append case: expected parse failed: %v\n", err)
+			failed = true
+		} else if !reflect.DeepEqual(appendObj, expectedObj) {
+			fmt.Printf("[FAIL] append case: append object mismatch\n")
+			fmt.Printf("  actual  : %#v\n", appendObj)
+			fmt.Printf("  expected: %#v\n", expectedObj)
+			failed = true
 		}
 	}
 

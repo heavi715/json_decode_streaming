@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "json-decode-streaming"
+version = "0.1.0"
+description = "Strict-prefix JSON repair utility for streaming AI output."
+readme = "README.txt"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{ name = "json_decode_streaming contributors" }]
+keywords = ["json", "streaming", "repair", "ai"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/heavi715/json_decode_streaming"
+Repository = "https://github.com/heavi715/json_decode_streaming"
+Issues = "https://github.com/heavi715/json_decode_streaming/issues"
+
+[tool.setuptools]
+py-modules = ["repair_json"]

@@ -17,12 +17,55 @@ foreach ($cases as $idx => $case) {
         $failures[] = [$idx, 'output mismatch', $repaired, $case['expected']];
         continue;
     }
+    $repairedObject = repair_json_strict_prefix($case['input'], true);
+    $expectedObject = ($case['expected'] !== '') ? json_decode($case['expected'], true) : null;
+    if ($repairedObject !== $expectedObject) {
+        $failures[] = [
+            $idx,
+            'object output mismatch',
+            json_encode($repairedObject),
+            json_encode($expectedObject),
+        ];
+        continue;
+    }
+    [$repairedBoth, $repairedBothObject] = repair_json_strict_prefix_both($case['input']);
+    if ($repairedBoth !== $case['expected']) {
+        $failures[] = [$idx, 'both output mismatch', $repairedBoth, $case['expected']];
+        continue;
+    }
+    if ($repairedBothObject !== $expectedObject) {
+        $failures[] = [
+            $idx,
+            'both object output mismatch',
+            json_encode($repairedBothObject),
+            json_encode($expectedObject),
+        ];
+        continue;
+    }
     if ($repaired !== '') {
         json_decode($repaired, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             $failures[] = [$idx, 'invalid json: ' . json_last_error_msg(), $repaired, $case['expected']];
         }
     }
+}
+
+$base = '{"a":"1"';
+$append = ',"b":2}';
+$expectedAppend = '{"a":"1","b":2}';
+$appended = repair_json_strict_prefix($base, false, $append);
+if ($appended !== $expectedAppend) {
+    $failures[] = ['append', 'append output mismatch', $appended, $expectedAppend];
+}
+$appendedObject = repair_json_strict_prefix($base, true, $append);
+$expectedAppendedObject = json_decode($expectedAppend, true);
+if ($appendedObject !== $expectedAppendedObject) {
+    $failures[] = [
+        'append',
+        'append object mismatch',
+        json_encode($appendedObject),
+        json_encode($expectedAppendedObject),
+    ];
 }
 
 if (count($failures) > 0) {
