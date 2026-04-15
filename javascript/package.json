@@ -1,6 +1,6 @@
 {
   "name": "json-decode-streaming",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Strict-prefix JSON repair utility for streaming AI output.",
   "main": "repairJson.js",
   "type": "commonjs",

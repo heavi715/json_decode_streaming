@@ -43,7 +43,7 @@ jobs:
             echo "TWINE_PASSWORD is empty, skip PyPI publish."
             exit 0
           fi
-          uv pip install twine
+          uv pip install --system twine
           twine upload python/dist/*
 
       - name: Build JavaScript package
