@@ -35,11 +35,14 @@ jobs:
         run: make package-python
 
       - name: Publish Python package to PyPI
-        if: ${{ secrets.TWINE_PASSWORD != '' }}
         env:
           TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
         run: |
+          if [ -z "${TWINE_PASSWORD}" ]; then
+            echo "TWINE_PASSWORD is empty, skip PyPI publish."
+            exit 0
+          fi
           uv pip install twine
           twine upload python/dist/*
 
@@ -47,10 +50,13 @@ jobs:
         run: make package-javascript
 
       - name: Publish JavaScript package to npm
-        if: ${{ secrets.NPM_TOKEN != '' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "NPM_TOKEN is empty, skip npm publish."
+            exit 0
+          fi
           cd javascript
           npm publish --access public
 
@@ -58,8 +64,14 @@ jobs:
         run: make package-php
 
       - name: Trigger Packagist update webhook
-        if: ${{ secrets.PACKAGIST_UPDATE_URL != '' }}
-        run: curl -X POST "${{ secrets.PACKAGIST_UPDATE_URL }}"
+        env:
+          PACKAGIST_UPDATE_URL: ${{ secrets.PACKAGIST_UPDATE_URL }}
+        run: |
+          if [ -z "${PACKAGIST_UPDATE_URL}" ]; then
+            echo "PACKAGIST_UPDATE_URL is empty, skip Packagist webhook."
+            exit 0
+          fi
+          curl -X POST "${PACKAGIST_UPDATE_URL}"
 
       - name: Verify Go module layout
         run: make package-go
