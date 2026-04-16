@@ -30,13 +30,13 @@
 
 - Python：`pip install json-decode-streaming`
 - JavaScript：`npm install json-decode-streaming`
-- Go：`go get github.com/heavi715/json_decode_streaming@v0.1.6`
+- Go：`go get github.com/heavi715/json_decode_streaming@v0.1.7`
 - PHP（Packagist 已索引时）：`composer require heavi/json-decode-streaming:^0.1`
 
 PHP 兜底安装（VCS，始终可用）：
 
 - `composer config repositories.json_decode_streaming vcs https://github.com/heavi715/json_decode_streaming.git`
-- `composer require heavi/json-decode-streaming:v0.1.6`
+- `composer require heavi/json-decode-streaming:v0.1.7`
 
 ## 本地构建可分发产物
 
