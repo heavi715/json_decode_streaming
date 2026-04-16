@@ -30,13 +30,13 @@ Direct remote install:
 
 - Python: `pip install json-decode-streaming`
 - JavaScript: `npm install json-decode-streaming`
-- Go: `go get github.com/heavi715/json_decode_streaming@v0.1.6`
+- Go: `go get github.com/heavi715/json_decode_streaming@v0.1.7`
 - PHP (when Packagist is indexed): `composer require heavi/json-decode-streaming:^0.1`
 
 PHP fallback install (always works via VCS):
 
 - `composer config repositories.json_decode_streaming vcs https://github.com/heavi715/json_decode_streaming.git`
-- `composer require heavi/json-decode-streaming:v0.1.6`
+- `composer require heavi/json-decode-streaming:v0.1.7`
 
 ## Build distributable artifacts locally
 
