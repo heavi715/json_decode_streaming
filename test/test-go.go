@@ -116,6 +116,31 @@ func main() {
 			failed = true
 		}
 	}
+	unicodeAccumulated := ""
+	unicodeChunk1 := `{"a":"\u12`
+	unicodeChunk2 := `34"}`
+	unicodeOut1, err := jsonrepair.RepairJSONStrictPrefixWithAppendOption(unicodeAccumulated, unicodeChunk1, false)
+	if err != nil {
+		fmt.Printf("[FAIL] append unicode case step1: failed: %v\n", err)
+		failed = true
+	} else if unicodeOut1.(string) != "{}" {
+		fmt.Printf("[FAIL] append unicode case step1: mismatch\n")
+		fmt.Printf("  actual  : %s\n", unicodeOut1.(string))
+		fmt.Printf("  expected: %s\n", "{}")
+		failed = true
+	}
+	unicodeAccumulated += unicodeChunk1
+	unicodeOut2, err := jsonrepair.RepairJSONStrictPrefixWithAppendOption(unicodeAccumulated, unicodeChunk2, false)
+	expectedUnicode := `{"a":"\u1234"}`
+	if err != nil {
+		fmt.Printf("[FAIL] append unicode case step2: failed: %v\n", err)
+		failed = true
+	} else if unicodeOut2.(string) != expectedUnicode {
+		fmt.Printf("[FAIL] append unicode case step2: mismatch\n")
+		fmt.Printf("  actual  : %s\n", unicodeOut2.(string))
+		fmt.Printf("  expected: %s\n", expectedUnicode)
+		failed = true
+	}
 
 	if failed {
 		os.Exit(1)

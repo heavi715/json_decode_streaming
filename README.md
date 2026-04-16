@@ -91,6 +91,37 @@ When AI responses arrive chunk-by-chunk, pass existing content as `text` and del
 - Go: `RepairJSONStrictPrefixWithAppendOption(text, chunk, true)`
 - PHP: `repair_json_strict_prefix($text, true, $chunk)`
 
+Append-cache tuning (optional):
+
+- JavaScript: `setRepairJsonAppendCacheConfig({ maxEntries, maxTotalBytes, ttlMs, clear })`
+- JavaScript preset helper: `applyRepairJsonAppendCachePreset("low_memory" | "high_throughput" | "default", clear?)`
+- Go: `SetAppendCacheConfig(maxEntries, maxTotalBytes, ttl, clear)`
+- Go preset helper: `ApplyAppendCachePreset(AppendCachePresetLowMemory|AppendCachePresetHighThroughput|AppendCachePresetDefault, clear)`
+- Python: `set_repair_json_append_cache_config(max_entries=..., max_total_bytes=..., ttl_seconds=..., clear=...)`
+- Python preset helper: `apply_repair_json_append_cache_preset("low_memory" | "high_throughput" | "default", clear=...)`
+- PHP: `set_repair_json_append_cache_config($maxEntries, $maxTotalBytes, $ttlSeconds, $clear)`
+- PHP preset helper: `apply_repair_json_append_cache_preset('low_memory'|'high_throughput'|'default', $clear)`
+- Ready presets:
+  - JavaScript: `node test/test-cache-config-javascript.js`
+  - Go: `go run -tags cacheconfiggo test/test-cache-config-go.go`
+
+Unified cache presets (all languages):
+
+- `default`: `max_entries=256`, `max_total_bytes=4 MiB`, `ttl=120s`
+- `low_memory`: `max_entries=64`, `max_total_bytes=512 KiB`, `ttl=15s`
+- `high_throughput`: `max_entries=1024`, `max_total_bytes=16 MiB`, `ttl=600s`
+
+Copy-ready examples:
+
+- JavaScript:
+  - `setRepairJsonAppendCacheConfig({ maxEntries: 64, maxTotalBytes: 512 * 1024, ttlMs: 15_000, clear: true })`
+- Go:
+  - `SetAppendCacheConfig(64, 512*1024, 15*time.Second, true)`
+- Python:
+  - `set_repair_json_append_cache_config(max_entries=64, max_total_bytes=512 * 1024, ttl_seconds=15.0, clear=True)`
+- PHP:
+  - `set_repair_json_append_cache_config(64, 512 * 1024, 15.0, true)`
+
 ## Piece convention for streaming
 
 In this project, a `piece` means one incremental text fragment from the model stream (often from `delta.content`).
