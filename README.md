@@ -91,6 +91,25 @@ When AI responses arrive chunk-by-chunk, pass existing content as `text` and del
 - Go: `RepairJSONStrictPrefixWithAppendOption(text, chunk, true)`
 - PHP: `repair_json_strict_prefix($text, true, $chunk)`
 
+## Piece convention for streaming
+
+In this project, a `piece` means one incremental text fragment from the model stream (often from `delta.content`).
+
+Recommended loop:
+
+1. Extract `piece` from current event.
+2. Skip when `piece` is empty.
+3. Call repair API with `text=accumulated` and append parameter=`piece`.
+4. Append piece locally: `accumulated += piece`.
+
+Reference patterns in repository tests:
+
+- Python: `test/test-ai-stream-python.py`
+- JavaScript: `test/test-ai-stream-javascript.js`
+- Go: `test/test-ai-stream-go.go`
+- PHP: `test/test-ai-stream-php.php`
+- curl+Python parser: `test/test-ai-stream-curl.sh`
+
 ## Run tests
 
 Shared test vectors are in `test/cases.json`.
@@ -127,7 +146,9 @@ Shared test vectors are in `test/cases.json`.
 - JavaScript:
   - `export PATH="/Users/heavi/.nvm/versions/node/v22.14.0/bin:$PATH"`
   - `node test/test-bench-javascript.js` (prints `string` and `object` modes)
+  - `node test/test-bench-javascript-append.js` (appendContent incremental vs full recompute)
 - Go: `go run -tags benchgo test/test-bench-go.go` (prints `string` and `object` modes)
+  - `go run -tags benchgoappend test/test-bench-go-append.go` (appendContent incremental vs full recompute)
 
 Optional mode selection for all benchmark scripts:
 
@@ -172,4 +193,3 @@ Covered scenario groups include:
 - It does not attempt to fix deeply corrupted prefixes.
 - Stream test env vars: `AI_STREAM_API_KEY`, optional `AI_STREAM_URL`, `AI_STREAM_MODEL`, `AI_STREAM_PROMPT`.
 - Stream snapshot printing: `AI_STREAM_PRINT_SNAPSHOTS=1` (default), limit with `AI_STREAM_MAX_SNAPSHOTS` (default `20`).
-

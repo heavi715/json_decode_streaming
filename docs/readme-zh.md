@@ -91,6 +91,25 @@ PHP 兜底安装（VCS，始终可用）：
 - Go：`RepairJSONStrictPrefixWithAppendOption(text, chunk, true)`
 - PHP：`repair_json_strict_prefix($text, true, $chunk)`
 
+## 流式中的 piece 约定
+
+在本项目里，`piece` 指模型流式输出中的单个增量文本片段（通常来自 `delta.content`）。
+
+推荐处理循环：
+
+1. 从当前事件提取 `piece`。
+2. 若 `piece` 为空则跳过。
+3. 用 `text=accumulated`、append 参数=`piece` 调用修复 API。
+4. 本地累积：`accumulated += piece`。
+
+仓库内可参考的实现：
+
+- Python：`test/test-ai-stream-python.py`
+- JavaScript：`test/test-ai-stream-javascript.js`
+- Go：`test/test-ai-stream-go.go`
+- PHP：`test/test-ai-stream-php.php`
+- curl + Python 解析：`test/test-ai-stream-curl.sh`
+
 ## 运行测试
 
 共享测试向量在 `test/cases.json`。
@@ -127,7 +146,9 @@ PHP 兜底安装（VCS，始终可用）：
 - JavaScript：
   - `export PATH="/Users/heavi/.nvm/versions/node/v22.14.0/bin:$PATH"`
   - `node test/test-bench-javascript.js`（输出 `string` 和 `object` 模式）
+  - `node test/test-bench-javascript-append.js`（对比 appendContent 增量路径与全量重算）
 - Go：`go run -tags benchgo test/test-bench-go.go`（输出 `string` 和 `object` 模式）
+  - `go run -tags benchgoappend test/test-bench-go-append.go`（对比 appendContent 增量路径与全量重算）
 
 所有基准脚本均支持可选 mode 参数：
 
@@ -172,3 +193,4 @@ PHP 兜底安装（VCS，始终可用）：
 - 不尝试修复深度损坏的前缀。
 - 流式测试环境变量：`AI_STREAM_API_KEY`，可选 `AI_STREAM_URL`、`AI_STREAM_MODEL`、`AI_STREAM_PROMPT`。
 - 流式快照打印：`AI_STREAM_PRINT_SNAPSHOTS=1`（默认），数量上限由 `AI_STREAM_MAX_SNAPSHOTS` 控制（默认 `20`）。
+

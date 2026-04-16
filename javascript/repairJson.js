@@ -47,244 +47,308 @@ function scanNumberEnd(text, start) {
   return i - 1;
 }
 
-function repairJsonStrictPrefix(text, returnObject = false, appendContent = "") {
-  if (appendContent !== "") {
-    text += appendContent;
+class RepairState {
+  constructor() {
+    this.text = "";
+    this.stack = [];
+    this.state = "root_value";
+    this.inString = false;
+    this.escapeNext = false;
+    this.stringRole = "";
+    this.lastSafe = -1;
+    this.arrayWaitingValue = false;
+    this.objectWaitingKey = false;
+    this.i = 0;
+    this.brokeEarly = false;
   }
+
+  clone() {
+    const cloned = new RepairState();
+    cloned.text = this.text;
+    cloned.stack = this.stack.slice();
+    cloned.state = this.state;
+    cloned.inString = this.inString;
+    cloned.escapeNext = this.escapeNext;
+    cloned.stringRole = this.stringRole;
+    cloned.lastSafe = this.lastSafe;
+    cloned.arrayWaitingValue = this.arrayWaitingValue;
+    cloned.objectWaitingKey = this.objectWaitingKey;
+    cloned.i = this.i;
+    cloned.brokeEarly = this.brokeEarly;
+    return cloned;
+  }
+
+  completeValue(idx) {
+    this.arrayWaitingValue = false;
+    this.objectWaitingKey = false;
+    if (this.stack.length === 0) {
+      this.state = "done";
+      this.lastSafe = idx;
+      return;
+    }
+    const top = this.stack[this.stack.length - 1];
+    if (top === "object") {
+      this.state = "object_comma_or_end";
+      this.lastSafe = idx;
+    } else {
+      this.state = "array_comma_or_end";
+      this.lastSafe = idx;
+    }
+  }
+
+  feed(chunk) {
+    if (!chunk) return;
+    if (this.brokeEarly) {
+      this.text += chunk;
+      return;
+    }
+    this.text += chunk;
+
+    while (this.i < this.text.length) {
+      const ch = this.text[this.i];
+
+      if (this.inString) {
+        if (this.escapeNext) {
+          if ("\"\\/bfnrt".includes(ch)) {
+            this.escapeNext = false;
+            this.i += 1;
+            continue;
+          }
+          if (ch === "u") {
+            if (this.i + 4 >= this.text.length) {
+              this.brokeEarly = true;
+              break;
+            }
+            if (!isHex4At(this.text, this.i + 1)) {
+              this.brokeEarly = true;
+              break;
+            }
+            this.escapeNext = false;
+            this.i += 5;
+            continue;
+          }
+          this.brokeEarly = true;
+          break;
+        }
+        if (ch === "\\") {
+          this.escapeNext = true;
+          this.i += 1;
+          continue;
+        }
+        if (ch === "\"") {
+          this.inString = false;
+          if (this.stringRole === "key") {
+            this.state = "object_colon";
+          } else {
+            this.completeValue(this.i);
+          }
+        }
+        this.i += 1;
+        continue;
+      }
+
+      if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
+        this.i += 1;
+        continue;
+      }
+
+      if (this.state === "done") {
+        this.brokeEarly = true;
+        break;
+      }
+
+      if (this.state === "root_value" || this.state === "object_value" || this.state === "array_value_or_end") {
+        if (ch === "{") {
+          this.stack.push("object");
+          this.state = "object_key_or_end";
+          this.lastSafe = this.i;
+          this.i += 1;
+          continue;
+        }
+        if (ch === "[") {
+          this.stack.push("array");
+          this.state = "array_value_or_end";
+          this.lastSafe = this.i;
+          this.i += 1;
+          continue;
+        }
+        if (ch === "\"") {
+          this.inString = true;
+          this.stringRole = "value";
+          this.i += 1;
+          continue;
+        }
+        if (ch === "-" || (ch >= "0" && ch <= "9")) {
+          const end = scanNumberEnd(this.text, this.i);
+          if (end < this.i) {
+            this.brokeEarly = true;
+            break;
+          }
+          this.i = end + 1;
+          this.completeValue(end);
+          continue;
+        }
+        if (this.text.startsWith("true", this.i)) {
+          this.i += 4;
+          this.completeValue(this.i - 1);
+          continue;
+        }
+        if (this.text.startsWith("false", this.i)) {
+          this.i += 5;
+          this.completeValue(this.i - 1);
+          continue;
+        }
+        if (this.text.startsWith("null", this.i)) {
+          this.i += 4;
+          this.completeValue(this.i - 1);
+          continue;
+        }
+        if (this.state === "array_value_or_end" && ch === "]") {
+          if (this.arrayWaitingValue) {
+            this.brokeEarly = true;
+            break;
+          }
+          this.stack.pop();
+          this.completeValue(this.i);
+          this.i += 1;
+          continue;
+        }
+        this.brokeEarly = true;
+        break;
+      }
+
+      if (this.state === "object_key_or_end") {
+        if (ch === "}") {
+          if (this.objectWaitingKey) {
+            this.brokeEarly = true;
+            break;
+          }
+          this.stack.pop();
+          this.completeValue(this.i);
+          this.i += 1;
+          continue;
+        }
+        if (ch === "\"") {
+          this.objectWaitingKey = false;
+          this.inString = true;
+          this.stringRole = "key";
+          this.i += 1;
+          continue;
+        }
+        this.brokeEarly = true;
+        break;
+      }
+
+      if (this.state === "object_colon") {
+        if (ch === ":") {
+          this.state = "object_value";
+          this.i += 1;
+          continue;
+        }
+        this.brokeEarly = true;
+        break;
+      }
+
+      if (this.state === "object_comma_or_end") {
+        if (ch === ",") {
+          this.state = "object_key_or_end";
+          this.objectWaitingKey = true;
+          this.i += 1;
+          continue;
+        }
+        if (ch === "}") {
+          this.stack.pop();
+          this.completeValue(this.i);
+          this.i += 1;
+          continue;
+        }
+        this.brokeEarly = true;
+        break;
+      }
+
+      if (this.state === "array_comma_or_end") {
+        if (ch === ",") {
+          this.state = "array_value_or_end";
+          this.arrayWaitingValue = true;
+          this.i += 1;
+          continue;
+        }
+        if (ch === "]") {
+          this.stack.pop();
+          this.completeValue(this.i);
+          this.i += 1;
+          continue;
+        }
+        this.brokeEarly = true;
+        break;
+      }
+
+      this.brokeEarly = true;
+      break;
+    }
+  }
+
+  snapshot() {
+    let base = "";
+    if (this.inString && !this.brokeEarly && !this.escapeNext && this.stringRole === "value") {
+      base = `${this.text}"`;
+    } else {
+      base = this.lastSafe >= 0 ? this.text.slice(0, this.lastSafe + 1) : "";
+    }
+    const closers = this.stack
+      .slice()
+      .reverse()
+      .map((kind) => (kind === "object" ? "}" : "]"))
+      .join("");
+    return `${base}${closers}`;
+  }
+}
+
+const appendStateCache = new Map();
+const APPEND_CACHE_MAX_ENTRIES = 256;
+
+function cacheAppendState(text, state) {
+  appendStateCache.set(text, state);
+  if (appendStateCache.size <= APPEND_CACHE_MAX_ENTRIES) return;
+  const oldestKey = appendStateCache.keys().next().value;
+  appendStateCache.delete(oldestKey);
+}
+
+function parseAndRepairFromScratch(text) {
+  const state = new RepairState();
+  state.feed(text);
+  return state.snapshot();
+}
+
+function repairJsonStrictPrefix(text, returnObject = false, appendContent = "") {
+  const fullText = appendContent !== "" ? text + appendContent : text;
   if (returnObject) {
     try {
-      return JSON.parse(text);
+      return JSON.parse(fullText);
     } catch {
       // Fall back to repaired parse path.
     }
   }
-  const stack = [];
-  let state = "root_value";
-  let inString = false;
-  let escapeNext = false;
-  let stringRole = "";
-  let lastSafe = -1;
-  let arrayWaitingValue = false;
-  let objectWaitingKey = false;
-  let i = 0;
-  let brokeEarly = false;
-
-  const completeValue = (idx) => {
-    arrayWaitingValue = false;
-    objectWaitingKey = false;
-    if (stack.length === 0) {
-      state = "done";
-      lastSafe = idx;
-      return;
-    }
-    const top = stack[stack.length - 1];
-    if (top === "object") {
-      state = "object_comma_or_end";
-      lastSafe = idx;
+  let repaired;
+  if (appendContent !== "") {
+    const cachedBaseState = appendStateCache.get(text);
+    if (cachedBaseState) {
+      const nextState = cachedBaseState.clone();
+      nextState.feed(appendContent);
+      repaired = nextState.snapshot();
+      cacheAppendState(fullText, nextState);
     } else {
-      state = "array_comma_or_end";
-      lastSafe = idx;
+      repaired = parseAndRepairFromScratch(fullText);
+      const fullState = new RepairState();
+      fullState.feed(fullText);
+      cacheAppendState(fullText, fullState);
     }
-  };
-
-  while (i < text.length) {
-    const ch = text[i];
-
-    if (inString) {
-      if (escapeNext) {
-        if ("\"\\/bfnrt".includes(ch)) {
-          escapeNext = false;
-          i += 1;
-          continue;
-        }
-        if (ch === "u") {
-          if (i + 4 >= text.length) {
-            brokeEarly = true;
-            break;
-          }
-          if (!isHex4At(text, i + 1)) {
-            brokeEarly = true;
-            break;
-          }
-          escapeNext = false;
-          i += 5;
-          continue;
-        }
-        brokeEarly = true;
-        break;
-      }
-      if (ch === "\\") {
-        escapeNext = true;
-        i += 1;
-        continue;
-      }
-      if (ch === "\"") {
-        inString = false;
-        if (stringRole === "key") {
-          state = "object_colon";
-        } else {
-          completeValue(i);
-        }
-      }
-      i += 1;
-      continue;
-    }
-
-    if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
-      i += 1;
-      continue;
-    }
-
-    if (state === "done") {
-      brokeEarly = true;
-      break;
-    }
-
-    if (state === "root_value" || state === "object_value" || state === "array_value_or_end") {
-      if (ch === "{") {
-        stack.push("object");
-        state = "object_key_or_end";
-        lastSafe = i;
-        i += 1;
-        continue;
-      }
-      if (ch === "[") {
-        stack.push("array");
-        state = "array_value_or_end";
-        lastSafe = i;
-        i += 1;
-        continue;
-      }
-      if (ch === "\"") {
-        inString = true;
-        stringRole = "value";
-        i += 1;
-        continue;
-      }
-      if (ch === "-" || (ch >= "0" && ch <= "9")) {
-        const end = scanNumberEnd(text, i);
-        if (end < i) {
-          brokeEarly = true;
-          break;
-        }
-        i = end + 1;
-        completeValue(end);
-        continue;
-      }
-      if (text.startsWith("true", i)) {
-        i += 4;
-        completeValue(i - 1);
-        continue;
-      }
-      if (text.startsWith("false", i)) {
-        i += 5;
-        completeValue(i - 1);
-        continue;
-      }
-      if (text.startsWith("null", i)) {
-        i += 4;
-        completeValue(i - 1);
-        continue;
-      }
-      if (state === "array_value_or_end" && ch === "]") {
-        if (arrayWaitingValue) {
-          brokeEarly = true;
-          break;
-        }
-        stack.pop();
-        completeValue(i);
-        i += 1;
-        continue;
-      }
-      brokeEarly = true;
-      break;
-    }
-
-    if (state === "object_key_or_end") {
-      if (ch === "}") {
-        if (objectWaitingKey) {
-          brokeEarly = true;
-          break;
-        }
-        stack.pop();
-        completeValue(i);
-        i += 1;
-        continue;
-      }
-      if (ch === "\"") {
-        objectWaitingKey = false;
-        inString = true;
-        stringRole = "key";
-        i += 1;
-        continue;
-      }
-      brokeEarly = true;
-      break;
-    }
-
-    if (state === "object_colon") {
-      if (ch === ":") {
-        state = "object_value";
-        i += 1;
-        continue;
-      }
-      brokeEarly = true;
-      break;
-    }
-
-    if (state === "object_comma_or_end") {
-      if (ch === ",") {
-        state = "object_key_or_end";
-        objectWaitingKey = true;
-        i += 1;
-        continue;
-      }
-      if (ch === "}") {
-        stack.pop();
-        completeValue(i);
-        i += 1;
-        continue;
-      }
-      brokeEarly = true;
-      break;
-    }
-
-    if (state === "array_comma_or_end") {
-      if (ch === ",") {
-        state = "array_value_or_end";
-        arrayWaitingValue = true;
-        i += 1;
-        continue;
-      }
-      if (ch === "]") {
-        stack.pop();
-        completeValue(i);
-        i += 1;
-        continue;
-      }
-      brokeEarly = true;
-      break;
-    }
-
-    brokeEarly = true;
-    break;
-  }
-
-  let base = "";
-  if (inString && !brokeEarly && !escapeNext && stringRole === "value") {
-    base = `${text}"`;
-    completeValue(text.length);
   } else {
-    base = lastSafe >= 0 ? text.slice(0, lastSafe + 1) : "";
+    repaired = parseAndRepairFromScratch(fullText);
+    const baseState = new RepairState();
+    baseState.feed(fullText);
+    cacheAppendState(fullText, baseState);
   }
-
-  const closers = stack
-    .slice()
-    .reverse()
-    .map((kind) => (kind === "object" ? "}" : "]"))
-    .join("");
-
-  const repaired = `${base}${closers}`;
   if (!returnObject) {
     return repaired;
   }

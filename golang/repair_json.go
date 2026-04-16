@@ -1,6 +1,9 @@
 package jsonrepair
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"sync"
+)
 
 func isHex4At(text string, start int) bool {
 	if start+4 > len(text) {
@@ -73,237 +76,306 @@ func scanNumberEnd(text string, start int) int {
 	return i - 1
 }
 
-func RepairJSONStrictPrefix(text string) string {
-	stack := make([]string, 0)
-	state := "root_value"
-	inString := false
-	escapeNext := false
-	stringRole := ""
-	lastSafe := -1
-	arrayWaitingValue := false
-	objectWaitingKey := false
-	i := 0
-	brokeEarly := false
+type repairState struct {
+	text              string
+	stack             []string
+	state             string
+	inString          bool
+	escapeNext        bool
+	stringRole        string
+	lastSafe          int
+	arrayWaitingValue bool
+	objectWaitingKey  bool
+	i                 int
+	brokeEarly        bool
+}
 
-	completeValue := func(idx int) {
-		arrayWaitingValue = false
-		objectWaitingKey = false
-		if len(stack) == 0 {
-			state = "done"
-			lastSafe = idx
-			return
-		}
-		top := stack[len(stack)-1]
-		if top == "object" {
-			state = "object_comma_or_end"
-			lastSafe = idx
-		} else {
-			state = "array_comma_or_end"
-			lastSafe = idx
-		}
+func newRepairState() *repairState {
+	return &repairState{
+		stack:    make([]string, 0),
+		state:    "root_value",
+		lastSafe: -1,
 	}
+}
 
-	for i < len(text) {
-		ch := text[i]
+func (s *repairState) clone() *repairState {
+	cloned := *s
+	cloned.stack = append([]string(nil), s.stack...)
+	return &cloned
+}
 
-		if inString {
-			if escapeNext {
+func (s *repairState) completeValue(idx int) {
+	s.arrayWaitingValue = false
+	s.objectWaitingKey = false
+	if len(s.stack) == 0 {
+		s.state = "done"
+		s.lastSafe = idx
+		return
+	}
+	top := s.stack[len(s.stack)-1]
+	if top == "object" {
+		s.state = "object_comma_or_end"
+		s.lastSafe = idx
+	} else {
+		s.state = "array_comma_or_end"
+		s.lastSafe = idx
+	}
+}
+
+func (s *repairState) feed(chunk string) {
+	if chunk == "" {
+		return
+	}
+	if s.brokeEarly {
+		s.text += chunk
+		return
+	}
+	s.text += chunk
+
+	for s.i < len(s.text) {
+		ch := s.text[s.i]
+
+		if s.inString {
+			if s.escapeNext {
 				if ch == '"' || ch == '\\' || ch == '/' || ch == 'b' || ch == 'f' || ch == 'n' || ch == 'r' || ch == 't' {
-					escapeNext = false
-					i++
+					s.escapeNext = false
+					s.i++
 					continue
 				}
 				if ch == 'u' {
-					if i+4 >= len(text) {
-						brokeEarly = true
+					if s.i+4 >= len(s.text) {
+						s.brokeEarly = true
 						break
 					}
-					if !isHex4At(text, i+1) {
-						brokeEarly = true
+					if !isHex4At(s.text, s.i+1) {
+						s.brokeEarly = true
 						break
 					}
-					escapeNext = false
-					i += 5
+					s.escapeNext = false
+					s.i += 5
 					continue
 				}
-				brokeEarly = true
+				s.brokeEarly = true
 				break
 			}
 			if ch == '\\' {
-				escapeNext = true
-				i++
+				s.escapeNext = true
+				s.i++
 				continue
 			}
 			if ch == '"' {
-				inString = false
-				if stringRole == "key" {
-					state = "object_colon"
+				s.inString = false
+				if s.stringRole == "key" {
+					s.state = "object_colon"
 				} else {
-					completeValue(i)
+					s.completeValue(s.i)
 				}
 			}
-			i++
+			s.i++
 			continue
 		}
 
 		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
-			i++
+			s.i++
 			continue
 		}
 
-		if state == "done" {
-			brokeEarly = true
+		if s.state == "done" {
+			s.brokeEarly = true
 			break
 		}
 
-		if state == "root_value" || state == "object_value" || state == "array_value_or_end" {
+		if s.state == "root_value" || s.state == "object_value" || s.state == "array_value_or_end" {
 			if ch == '{' {
-				stack = append(stack, "object")
-				state = "object_key_or_end"
-				lastSafe = i
-				i++
+				s.stack = append(s.stack, "object")
+				s.state = "object_key_or_end"
+				s.lastSafe = s.i
+				s.i++
 				continue
 			}
 			if ch == '[' {
-				stack = append(stack, "array")
-				state = "array_value_or_end"
-				lastSafe = i
-				i++
+				s.stack = append(s.stack, "array")
+				s.state = "array_value_or_end"
+				s.lastSafe = s.i
+				s.i++
 				continue
 			}
 			if ch == '"' {
-				inString = true
-				stringRole = "value"
-				i++
+				s.inString = true
+				s.stringRole = "value"
+				s.i++
 				continue
 			}
 			if (ch >= '0' && ch <= '9') || ch == '-' {
-				end := scanNumberEnd(text, i)
-				if end < i {
-					brokeEarly = true
+				end := scanNumberEnd(s.text, s.i)
+				if end < s.i {
+					s.brokeEarly = true
 					break
 				}
-				i = end + 1
-				completeValue(end)
+				s.i = end + 1
+				s.completeValue(end)
 				continue
 			}
-			if len(text)-i >= 4 && text[i:i+4] == "true" {
-				i += 4
-				completeValue(i - 1)
+			if len(s.text)-s.i >= 4 && s.text[s.i:s.i+4] == "true" {
+				s.i += 4
+				s.completeValue(s.i - 1)
 				continue
 			}
-			if len(text)-i >= 5 && text[i:i+5] == "false" {
-				i += 5
-				completeValue(i - 1)
+			if len(s.text)-s.i >= 5 && s.text[s.i:s.i+5] == "false" {
+				s.i += 5
+				s.completeValue(s.i - 1)
 				continue
 			}
-			if len(text)-i >= 4 && text[i:i+4] == "null" {
-				i += 4
-				completeValue(i - 1)
+			if len(s.text)-s.i >= 4 && s.text[s.i:s.i+4] == "null" {
+				s.i += 4
+				s.completeValue(s.i - 1)
 				continue
 			}
-			if state == "array_value_or_end" && ch == ']' {
-				if arrayWaitingValue {
-					brokeEarly = true
+			if s.state == "array_value_or_end" && ch == ']' {
+				if s.arrayWaitingValue {
+					s.brokeEarly = true
 					break
 				}
-				stack = stack[:len(stack)-1]
-				completeValue(i)
-				i++
+				s.stack = s.stack[:len(s.stack)-1]
+				s.completeValue(s.i)
+				s.i++
 				continue
 			}
-			brokeEarly = true
+			s.brokeEarly = true
 			break
 		}
 
-		if state == "object_key_or_end" {
+		if s.state == "object_key_or_end" {
 			if ch == '}' {
-				if objectWaitingKey {
-					brokeEarly = true
+				if s.objectWaitingKey {
+					s.brokeEarly = true
 					break
 				}
-				stack = stack[:len(stack)-1]
-				completeValue(i)
-				i++
+				s.stack = s.stack[:len(s.stack)-1]
+				s.completeValue(s.i)
+				s.i++
 				continue
 			}
 			if ch == '"' {
-				objectWaitingKey = false
-				inString = true
-				stringRole = "key"
-				i++
+				s.objectWaitingKey = false
+				s.inString = true
+				s.stringRole = "key"
+				s.i++
 				continue
 			}
-			brokeEarly = true
+			s.brokeEarly = true
 			break
 		}
 
-		if state == "object_colon" {
+		if s.state == "object_colon" {
 			if ch == ':' {
-				state = "object_value"
-				i++
+				s.state = "object_value"
+				s.i++
 				continue
 			}
-			brokeEarly = true
+			s.brokeEarly = true
 			break
 		}
 
-		if state == "object_comma_or_end" {
+		if s.state == "object_comma_or_end" {
 			if ch == ',' {
-				state = "object_key_or_end"
-				objectWaitingKey = true
-				i++
+				s.state = "object_key_or_end"
+				s.objectWaitingKey = true
+				s.i++
 				continue
 			}
 			if ch == '}' {
-				stack = stack[:len(stack)-1]
-				completeValue(i)
-				i++
+				s.stack = s.stack[:len(s.stack)-1]
+				s.completeValue(s.i)
+				s.i++
 				continue
 			}
-			brokeEarly = true
+			s.brokeEarly = true
 			break
 		}
 
-		if state == "array_comma_or_end" {
+		if s.state == "array_comma_or_end" {
 			if ch == ',' {
-				state = "array_value_or_end"
-				arrayWaitingValue = true
-				i++
+				s.state = "array_value_or_end"
+				s.arrayWaitingValue = true
+				s.i++
 				continue
 			}
 			if ch == ']' {
-				stack = stack[:len(stack)-1]
-				completeValue(i)
-				i++
+				s.stack = s.stack[:len(s.stack)-1]
+				s.completeValue(s.i)
+				s.i++
 				continue
 			}
-			brokeEarly = true
+			s.brokeEarly = true
 			break
 		}
 
-		brokeEarly = true
+		s.brokeEarly = true
 		break
 	}
+}
 
+func (s *repairState) snapshot() string {
 	base := ""
-	if inString && !brokeEarly && !escapeNext && stringRole == "value" {
-		base = text + `"`
-		completeValue(len(text))
-	} else if lastSafe >= 0 {
-		base = text[:lastSafe+1]
+	if s.inString && !s.brokeEarly && !s.escapeNext && s.stringRole == "value" {
+		base = s.text + `"`
+	} else if s.lastSafe >= 0 {
+		base = s.text[:s.lastSafe+1]
 	}
-
 	closers := ""
-	for idx := len(stack) - 1; idx >= 0; idx-- {
-		if stack[idx] == "object" {
+	for idx := len(s.stack) - 1; idx >= 0; idx-- {
+		if s.stack[idx] == "object" {
 			closers += "}"
 		} else {
 			closers += "]"
 		}
 	}
-
 	return base + closers
+}
+
+const appendCacheMaxEntries = 256
+
+var (
+	appendStateCacheMu sync.RWMutex
+	appendStateCache   = map[string]*repairState{}
+	appendCacheOrder   = make([]string, 0, appendCacheMaxEntries)
+)
+
+func getAppendState(key string) *repairState {
+	appendStateCacheMu.RLock()
+	defer appendStateCacheMu.RUnlock()
+	state, ok := appendStateCache[key]
+	if !ok {
+		return nil
+	}
+	return state.clone()
+}
+
+func putAppendState(key string, state *repairState) {
+	appendStateCacheMu.Lock()
+	defer appendStateCacheMu.Unlock()
+	if _, exists := appendStateCache[key]; !exists {
+		appendCacheOrder = append(appendCacheOrder, key)
+	}
+	appendStateCache[key] = state.clone()
+	for len(appendCacheOrder) > appendCacheMaxEntries {
+		oldest := appendCacheOrder[0]
+		appendCacheOrder = appendCacheOrder[1:]
+		delete(appendStateCache, oldest)
+	}
+}
+
+func repairFromScratchWithState(text string) (string, *repairState) {
+	state := newRepairState()
+	state.feed(text)
+	return state.snapshot(), state
+}
+
+func RepairJSONStrictPrefix(text string) string {
+	repaired, state := repairFromScratchWithState(text)
+	putAppendState(text, state)
+	return repaired
 }
 
 func RepairJSONStrictPrefixWithOption(text string, returnObject bool) (any, error) {
@@ -326,7 +398,38 @@ func RepairJSONStrictPrefixWithOption(text string, returnObject bool) (any, erro
 }
 
 func RepairJSONStrictPrefixWithAppendOption(text string, appendContent string, returnObject bool) (any, error) {
-	return RepairJSONStrictPrefixWithOption(text+appendContent, returnObject)
+	fullText := text + appendContent
+	if appendContent == "" {
+		return RepairJSONStrictPrefixWithOption(text, returnObject)
+	}
+	if returnObject {
+		var parsedOriginal any
+		if err := json.Unmarshal([]byte(fullText), &parsedOriginal); err == nil {
+			return parsedOriginal, nil
+		}
+	}
+	cached := getAppendState(text)
+	var repaired string
+	var state *repairState
+	if cached != nil {
+		cached.feed(appendContent)
+		repaired = cached.snapshot()
+		state = cached
+	} else {
+		repaired, state = repairFromScratchWithState(fullText)
+	}
+	putAppendState(fullText, state)
+	if !returnObject {
+		return repaired, nil
+	}
+	if repaired == "" {
+		return nil, nil
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(repaired), &parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
 }
 
 func RepairJSONStrictPrefixBoth(text string) (string, any, error) {
