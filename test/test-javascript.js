@@ -1,7 +1,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { repairJsonStrictPrefix, repairJsonStrictPrefixBoth } = require("../javascript/repairJson");
+const {
+  repairJsonStrictPrefix,
+  repairJsonStrictPrefixBoth,
+  applyRepairJsonAppendCachePreset,
+} = require("../javascript/repairJson");
 
 function main() {
   const root = path.resolve(__dirname, "..");
@@ -51,6 +55,7 @@ function main() {
   const base = '{"a":"1"';
   const append = ',"b":2}';
   const expectedAppend = '{"a":"1","b":2}';
+  applyRepairJsonAppendCachePreset("low_memory", true);
   const appended = repairJsonStrictPrefix(base, false, append);
   if (appended !== expectedAppend) {
     failures.push({ idx: "append", reason: "append output mismatch", repaired: appended, expected: expectedAppend });
@@ -63,6 +68,29 @@ function main() {
       reason: "append object mismatch",
       repaired: JSON.stringify(appendedObject),
       expected: JSON.stringify(expectedAppendedObject),
+    });
+  }
+  let unicodeAccumulated = "";
+  const unicodeChunk1 = '{"a":"\\u12';
+  const unicodeChunk2 = '34"}';
+  const unicodeStep1 = repairJsonStrictPrefix(unicodeAccumulated, false, unicodeChunk1);
+  unicodeAccumulated += unicodeChunk1;
+  const unicodeStep2 = repairJsonStrictPrefix(unicodeAccumulated, false, unicodeChunk2);
+  const expectedUnicode = '{"a":"\\u1234"}';
+  if (unicodeStep1 !== "{}") {
+    failures.push({
+      idx: "append-unicode-step1",
+      reason: "append unicode intermediate mismatch",
+      repaired: unicodeStep1,
+      expected: "{}",
+    });
+  }
+  if (unicodeStep2 !== expectedUnicode) {
+    failures.push({
+      idx: "append-unicode-step2",
+      reason: "append unicode final mismatch",
+      repaired: unicodeStep2,
+      expected: expectedUnicode,
     });
   }
 

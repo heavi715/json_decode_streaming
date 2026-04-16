@@ -6,7 +6,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from python.repair_json import repair_json_strict_prefix, repair_json_strict_prefix_both
+from python.repair_json import (
+    apply_repair_json_append_cache_preset,
+    repair_json_strict_prefix,
+    repair_json_strict_prefix_both,
+)
 
 
 def main() -> None:
@@ -53,6 +57,7 @@ def main() -> None:
     base = '{"a":"1"'
     append = ',"b":2}'
     expected_append = '{"a":"1","b":2}'
+    apply_repair_json_append_cache_preset("low_memory", clear=True)
     appended = repair_json_strict_prefix(base, append_content=append)
     if appended != expected_append:
         failures.append(("append", "append output mismatch", appended, expected_append))
@@ -65,6 +70,31 @@ def main() -> None:
                 "append object mismatch",
                 repr(appended_object),
                 repr(expected_appended_object),
+            )
+        )
+    unicode_accumulated = ""
+    unicode_chunk1 = '{"a":"\\u12'
+    unicode_chunk2 = '34"}'
+    unicode_step1 = repair_json_strict_prefix(unicode_accumulated, append_content=unicode_chunk1)
+    unicode_accumulated += unicode_chunk1
+    unicode_step2 = repair_json_strict_prefix(unicode_accumulated, append_content=unicode_chunk2)
+    expected_unicode = '{"a":"\\u1234"}'
+    if unicode_step1 != "{}":
+        failures.append(
+            (
+                "append-unicode-step1",
+                "append unicode intermediate mismatch",
+                unicode_step1,
+                "{}",
+            )
+        )
+    if unicode_step2 != expected_unicode:
+        failures.append(
+            (
+                "append-unicode-step2",
+                "append unicode final mismatch",
+                unicode_step2,
+                expected_unicode,
             )
         )
 

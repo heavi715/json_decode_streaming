@@ -53,6 +53,7 @@ foreach ($cases as $idx => $case) {
 $base = '{"a":"1"';
 $append = ',"b":2}';
 $expectedAppend = '{"a":"1","b":2}';
+apply_repair_json_append_cache_preset('low_memory', true);
 $appended = repair_json_strict_prefix($base, false, $append);
 if ($appended !== $expectedAppend) {
     $failures[] = ['append', 'append output mismatch', $appended, $expectedAppend];
@@ -66,6 +67,19 @@ if ($appendedObject !== $expectedAppendedObject) {
         json_encode($appendedObject),
         json_encode($expectedAppendedObject),
     ];
+}
+$unicodeAccumulated = '';
+$unicodeChunk1 = '{"a":"\u12';
+$unicodeChunk2 = '34"}';
+$unicodeStep1 = repair_json_strict_prefix($unicodeAccumulated, false, $unicodeChunk1);
+$unicodeAccumulated .= $unicodeChunk1;
+$unicodeStep2 = repair_json_strict_prefix($unicodeAccumulated, false, $unicodeChunk2);
+$expectedUnicode = '{"a":"\u1234"}';
+if ($unicodeStep1 !== '{}') {
+    $failures[] = ['append-unicode-step1', 'append unicode intermediate mismatch', $unicodeStep1, '{}'];
+}
+if ($unicodeStep2 !== $expectedUnicode) {
+    $failures[] = ['append-unicode-step2', 'append unicode final mismatch', $unicodeStep2, $expectedUnicode];
 }
 
 if (count($failures) > 0) {

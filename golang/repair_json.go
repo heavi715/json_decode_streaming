@@ -2,7 +2,9 @@ package jsonrepair
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
+	"time"
 )
 
 func isHex4At(text string, start int) bool {
@@ -144,7 +146,7 @@ func (s *repairState) feed(chunk string) {
 				}
 				if ch == 'u' {
 					if s.i+4 >= len(s.text) {
-						s.brokeEarly = true
+						// Wait for remaining hex digits in next chunk.
 						break
 					}
 					if !isHex4At(s.text, s.i+1) {
@@ -334,36 +336,166 @@ func (s *repairState) snapshot() string {
 	return base + closers
 }
 
-const appendCacheMaxEntries = 256
+const defaultAppendCacheMaxEntries = 256
+const defaultAppendCacheMaxTotalBytes = 4 * 1024 * 1024
+const defaultAppendCacheTTL = 2 * time.Minute
 
 var (
-	appendStateCacheMu sync.RWMutex
-	appendStateCache   = map[string]*repairState{}
-	appendCacheOrder   = make([]string, 0, appendCacheMaxEntries)
+	appendStateCacheMu sync.Mutex
+	appendStateCache   = map[string]appendCacheEntry{}
+	appendCacheOrder   = make([]string, 0, defaultAppendCacheMaxEntries)
+	appendCacheBytes   = 0
+	appendCacheConfig  = appendCacheConfigState{
+		maxEntries:    defaultAppendCacheMaxEntries,
+		maxTotalBytes: defaultAppendCacheMaxTotalBytes,
+		ttl:           defaultAppendCacheTTL,
+	}
 )
 
+type appendCacheEntry struct {
+	state    *repairState
+	keyBytes int
+	expires  time.Time
+}
+
+type appendCacheConfigState struct {
+	maxEntries    int
+	maxTotalBytes int
+	ttl           time.Duration
+}
+
+type AppendCachePreset string
+
+const (
+	AppendCachePresetDefault        AppendCachePreset = "default"
+	AppendCachePresetLowMemory      AppendCachePreset = "low_memory"
+	AppendCachePresetHighThroughput AppendCachePreset = "high_throughput"
+)
+
+// SetAppendCacheConfig configures append-state cache behavior.
+// Pass zero values to keep existing settings.
+// Set clear=true to drop current cache entries immediately.
+func SetAppendCacheConfig(maxEntries int, maxTotalBytes int, ttl time.Duration, clear bool) error {
+	appendStateCacheMu.Lock()
+	defer appendStateCacheMu.Unlock()
+
+	if maxEntries < 0 {
+		return errors.New("maxEntries must be >= 0")
+	}
+	if maxTotalBytes < 0 {
+		return errors.New("maxTotalBytes must be >= 0")
+	}
+	if ttl < 0 {
+		return errors.New("ttl must be >= 0")
+	}
+	if maxEntries > 0 {
+		appendCacheConfig.maxEntries = maxEntries
+	}
+	if maxTotalBytes > 0 {
+		appendCacheConfig.maxTotalBytes = maxTotalBytes
+	}
+	if ttl > 0 {
+		appendCacheConfig.ttl = ttl
+	}
+	if clear {
+		appendStateCache = map[string]appendCacheEntry{}
+		appendCacheOrder = appendCacheOrder[:0]
+		appendCacheBytes = 0
+		return nil
+	}
+	pruneAppendCacheLocked(time.Now())
+	return nil
+}
+
+func ApplyAppendCachePreset(preset AppendCachePreset, clear bool) error {
+	switch preset {
+	case AppendCachePresetDefault:
+		return SetAppendCacheConfig(256, 4*1024*1024, 120*time.Second, clear)
+	case AppendCachePresetLowMemory:
+		return SetAppendCacheConfig(64, 512*1024, 15*time.Second, clear)
+	case AppendCachePresetHighThroughput:
+		return SetAppendCacheConfig(1024, 16*1024*1024, 600*time.Second, clear)
+	default:
+		return errors.New("unknown append cache preset")
+	}
+}
+
+func removeKeyFromOrder(key string) {
+	for i := range appendCacheOrder {
+		if appendCacheOrder[i] == key {
+			appendCacheOrder = append(appendCacheOrder[:i], appendCacheOrder[i+1:]...)
+			return
+		}
+	}
+}
+
+func removeCacheEntryLocked(key string) {
+	entry, ok := appendStateCache[key]
+	if !ok {
+		return
+	}
+	delete(appendStateCache, key)
+	appendCacheBytes -= entry.keyBytes
+	removeKeyFromOrder(key)
+}
+
+func touchCacheKeyLocked(key string) {
+	removeKeyFromOrder(key)
+	appendCacheOrder = append(appendCacheOrder, key)
+}
+
+func pruneAppendCacheLocked(now time.Time) {
+	for len(appendCacheOrder) > 0 {
+		oldestKey := appendCacheOrder[0]
+		entry, ok := appendStateCache[oldestKey]
+		if !ok {
+			appendCacheOrder = appendCacheOrder[1:]
+			continue
+		}
+		overLimit := len(appendStateCache) > appendCacheConfig.maxEntries || appendCacheBytes > appendCacheConfig.maxTotalBytes
+		expired := !entry.expires.After(now)
+		if !overLimit && !expired {
+			break
+		}
+		removeCacheEntryLocked(oldestKey)
+	}
+}
+
 func getAppendState(key string) *repairState {
-	appendStateCacheMu.RLock()
-	defer appendStateCacheMu.RUnlock()
+	appendStateCacheMu.Lock()
+	defer appendStateCacheMu.Unlock()
+
+	now := time.Now()
 	state, ok := appendStateCache[key]
 	if !ok {
 		return nil
 	}
-	return state.clone()
+	if !state.expires.After(now) {
+		removeCacheEntryLocked(key)
+		return nil
+	}
+	state.expires = now.Add(appendCacheConfig.ttl)
+	appendStateCache[key] = state
+	touchCacheKeyLocked(key)
+	return state.state.clone()
 }
 
 func putAppendState(key string, state *repairState) {
 	appendStateCacheMu.Lock()
 	defer appendStateCacheMu.Unlock()
-	if _, exists := appendStateCache[key]; !exists {
-		appendCacheOrder = append(appendCacheOrder, key)
+
+	now := time.Now()
+	if _, exists := appendStateCache[key]; exists {
+		removeCacheEntryLocked(key)
 	}
-	appendStateCache[key] = state.clone()
-	for len(appendCacheOrder) > appendCacheMaxEntries {
-		oldest := appendCacheOrder[0]
-		appendCacheOrder = appendCacheOrder[1:]
-		delete(appendStateCache, oldest)
+	appendStateCache[key] = appendCacheEntry{
+		state:    state.clone(),
+		keyBytes: len(key),
+		expires:  now.Add(appendCacheConfig.ttl),
 	}
+	appendCacheBytes += len(key)
+	appendCacheOrder = append(appendCacheOrder, key)
+	pruneAppendCacheLocked(now)
 }
 
 func repairFromScratchWithState(text string) (string, *repairState) {
@@ -445,5 +577,17 @@ func RepairJSONStrictPrefixBoth(text string) (string, any, error) {
 }
 
 func RepairJSONStrictPrefixBothWithAppend(text string, appendContent string) (string, any, error) {
-	return RepairJSONStrictPrefixBoth(text + appendContent)
+	repairedAny, err := RepairJSONStrictPrefixWithAppendOption(text, appendContent, false)
+	if err != nil {
+		return "", nil, err
+	}
+	repaired := repairedAny.(string)
+	if repaired == "" {
+		return repaired, nil, nil
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(repaired), &parsed); err != nil {
+		return repaired, nil, err
+	}
+	return repaired, parsed, nil
 }

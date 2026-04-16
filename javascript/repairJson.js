@@ -116,7 +116,7 @@ class RepairState {
           }
           if (ch === "u") {
             if (this.i + 4 >= this.text.length) {
-              this.brokeEarly = true;
+            // Wait for remaining hex digits in next chunk.
               break;
             }
             if (!isHex4At(this.text, this.i + 1)) {
@@ -305,19 +305,127 @@ class RepairState {
 }
 
 const appendStateCache = new Map();
-const APPEND_CACHE_MAX_ENTRIES = 256;
+const DEFAULT_APPEND_CACHE_MAX_ENTRIES = 256;
+const DEFAULT_APPEND_CACHE_MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+const DEFAULT_APPEND_CACHE_TTL_MS = 2 * 60 * 1000;
+let appendCacheMaxEntries = DEFAULT_APPEND_CACHE_MAX_ENTRIES;
+let appendCacheMaxTotalBytes = DEFAULT_APPEND_CACHE_MAX_TOTAL_BYTES;
+let appendCacheTtlMs = DEFAULT_APPEND_CACHE_TTL_MS;
+let appendCacheTotalBytes = 0;
+const APPEND_CACHE_PRESETS = Object.freeze({
+  default: {
+    maxEntries: DEFAULT_APPEND_CACHE_MAX_ENTRIES,
+    maxTotalBytes: DEFAULT_APPEND_CACHE_MAX_TOTAL_BYTES,
+    ttlMs: DEFAULT_APPEND_CACHE_TTL_MS,
+  },
+  low_memory: {
+    maxEntries: 64,
+    maxTotalBytes: 512 * 1024,
+    ttlMs: 15_000,
+  },
+  high_throughput: {
+    maxEntries: 1024,
+    maxTotalBytes: 16 * 1024 * 1024,
+    ttlMs: 600_000,
+  },
+});
+
+function estimateKeyBytes(text) {
+  // JS string is UTF-16 in most engines.
+  return text.length * 2;
+}
+
+function touchCacheEntry(text, entry) {
+  appendStateCache.delete(text);
+  appendStateCache.set(text, entry);
+}
+
+function pruneAppendCache(now) {
+  while (appendStateCache.size > 0) {
+    const first = appendStateCache.entries().next().value;
+    if (!first) break;
+    const [key, entry] = first;
+    if (appendStateCache.size <= appendCacheMaxEntries && appendCacheTotalBytes <= appendCacheMaxTotalBytes) {
+      if (entry.expiresAt > now) break;
+    }
+    appendStateCache.delete(key);
+    appendCacheTotalBytes -= entry.keyBytes;
+  }
+}
+
+function getCachedAppendState(text) {
+  const entry = appendStateCache.get(text);
+  if (!entry) return null;
+  const now = Date.now();
+  if (entry.expiresAt <= now) {
+    appendStateCache.delete(text);
+    appendCacheTotalBytes -= entry.keyBytes;
+    return null;
+  }
+  entry.expiresAt = now + appendCacheTtlMs;
+  touchCacheEntry(text, entry);
+  return entry.state.clone();
+}
 
 function cacheAppendState(text, state) {
-  appendStateCache.set(text, state);
-  if (appendStateCache.size <= APPEND_CACHE_MAX_ENTRIES) return;
-  const oldestKey = appendStateCache.keys().next().value;
-  appendStateCache.delete(oldestKey);
+  const now = Date.now();
+  const keyBytes = estimateKeyBytes(text);
+  const existing = appendStateCache.get(text);
+  if (existing) {
+    appendCacheTotalBytes -= existing.keyBytes;
+    appendStateCache.delete(text);
+  }
+  appendStateCache.set(text, {
+    state: state.clone(),
+    keyBytes,
+    expiresAt: now + appendCacheTtlMs,
+  });
+  appendCacheTotalBytes += keyBytes;
+  pruneAppendCache(now);
+}
+
+function setRepairJsonAppendCacheConfig(config = {}) {
+  if (typeof config !== "object" || config === null) {
+    throw new TypeError("config must be an object");
+  }
+  const { maxEntries, maxTotalBytes, ttlMs, clear } = config;
+  if (maxEntries !== undefined) {
+    if (!Number.isInteger(maxEntries) || maxEntries < 1) {
+      throw new RangeError("maxEntries must be a positive integer");
+    }
+    appendCacheMaxEntries = maxEntries;
+  }
+  if (maxTotalBytes !== undefined) {
+    if (!Number.isInteger(maxTotalBytes) || maxTotalBytes < 1024) {
+      throw new RangeError("maxTotalBytes must be an integer >= 1024");
+    }
+    appendCacheMaxTotalBytes = maxTotalBytes;
+  }
+  if (ttlMs !== undefined) {
+    if (!Number.isInteger(ttlMs) || ttlMs < 100) {
+      throw new RangeError("ttlMs must be an integer >= 100");
+    }
+    appendCacheTtlMs = ttlMs;
+  }
+  if (clear === true) {
+    appendStateCache.clear();
+    appendCacheTotalBytes = 0;
+  }
+  pruneAppendCache(Date.now());
+}
+
+function applyRepairJsonAppendCachePreset(preset, clear = true) {
+  const picked = APPEND_CACHE_PRESETS[preset];
+  if (!picked) {
+    throw new RangeError(`unknown cache preset: ${preset}`);
+  }
+  setRepairJsonAppendCacheConfig({ ...picked, clear });
 }
 
 function parseAndRepairFromScratch(text) {
   const state = new RepairState();
   state.feed(text);
-  return state.snapshot();
+  return { repaired: state.snapshot(), state };
 }
 
 function repairJsonStrictPrefix(text, returnObject = false, appendContent = "") {
@@ -331,23 +439,21 @@ function repairJsonStrictPrefix(text, returnObject = false, appendContent = "") 
   }
   let repaired;
   if (appendContent !== "") {
-    const cachedBaseState = appendStateCache.get(text);
+    const cachedBaseState = getCachedAppendState(text);
     if (cachedBaseState) {
-      const nextState = cachedBaseState.clone();
+      const nextState = cachedBaseState;
       nextState.feed(appendContent);
       repaired = nextState.snapshot();
       cacheAppendState(fullText, nextState);
     } else {
-      repaired = parseAndRepairFromScratch(fullText);
-      const fullState = new RepairState();
-      fullState.feed(fullText);
-      cacheAppendState(fullText, fullState);
+      const parsed = parseAndRepairFromScratch(fullText);
+      repaired = parsed.repaired;
+      cacheAppendState(fullText, parsed.state);
     }
   } else {
-    repaired = parseAndRepairFromScratch(fullText);
-    const baseState = new RepairState();
-    baseState.feed(fullText);
-    cacheAppendState(fullText, baseState);
+    const parsed = parseAndRepairFromScratch(fullText);
+    repaired = parsed.repaired;
+    cacheAppendState(fullText, parsed.state);
   }
   if (!returnObject) {
     return repaired;
@@ -366,4 +472,9 @@ function repairJsonStrictPrefixBoth(text, appendContent = "") {
   return [repaired, JSON.parse(repaired)];
 }
 
-module.exports = { repairJsonStrictPrefix, repairJsonStrictPrefixBoth };
+module.exports = {
+  repairJsonStrictPrefix,
+  repairJsonStrictPrefixBoth,
+  setRepairJsonAppendCacheConfig,
+  applyRepairJsonAppendCachePreset,
+};

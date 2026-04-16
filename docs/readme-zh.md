@@ -91,6 +91,37 @@ PHP 兜底安装（VCS，始终可用）：
 - Go：`RepairJSONStrictPrefixWithAppendOption(text, chunk, true)`
 - PHP：`repair_json_strict_prefix($text, true, $chunk)`
 
+可选缓存调优：
+
+- JavaScript：`setRepairJsonAppendCacheConfig({ maxEntries, maxTotalBytes, ttlMs, clear })`
+- JavaScript 预设助手：`applyRepairJsonAppendCachePreset("low_memory" | "high_throughput" | "default", clear?)`
+- Go：`SetAppendCacheConfig(maxEntries, maxTotalBytes, ttl, clear)`
+- Go 预设助手：`ApplyAppendCachePreset(AppendCachePresetLowMemory|AppendCachePresetHighThroughput|AppendCachePresetDefault, clear)`
+- Python：`set_repair_json_append_cache_config(max_entries=..., max_total_bytes=..., ttl_seconds=..., clear=...)`
+- Python 预设助手：`apply_repair_json_append_cache_preset("low_memory" | "high_throughput" | "default", clear=...)`
+- PHP：`set_repair_json_append_cache_config($maxEntries, $maxTotalBytes, $ttlSeconds, $clear)`
+- PHP 预设助手：`apply_repair_json_append_cache_preset('low_memory'|'high_throughput'|'default', $clear)`
+- 预设示例：
+  - JavaScript：`node test/test-cache-config-javascript.js`
+  - Go：`go run -tags cacheconfiggo test/test-cache-config-go.go`
+
+统一缓存预设（所有语言）：
+
+- `default`：`max_entries=256`，`max_total_bytes=4 MiB`，`ttl=120s`
+- `low_memory`：`max_entries=64`，`max_total_bytes=512 KiB`，`ttl=15s`
+- `high_throughput`：`max_entries=1024`，`max_total_bytes=16 MiB`，`ttl=600s`
+
+可直接复制的配置示例：
+
+- JavaScript：
+  - `setRepairJsonAppendCacheConfig({ maxEntries: 64, maxTotalBytes: 512 * 1024, ttlMs: 15_000, clear: true })`
+- Go：
+  - `SetAppendCacheConfig(64, 512*1024, 15*time.Second, true)`
+- Python：
+  - `set_repair_json_append_cache_config(max_entries=64, max_total_bytes=512 * 1024, ttl_seconds=15.0, clear=True)`
+- PHP：
+  - `set_repair_json_append_cache_config(64, 512 * 1024, 15.0, true)`
+
 ## 流式中的 piece 约定
 
 在本项目里，`piece` 指模型流式输出中的单个增量文本片段（通常来自 `delta.content`）。
