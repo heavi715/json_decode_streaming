@@ -35,3 +35,6 @@ build/
 *.log
 *.tmp
 *.temp
+*.tgz
+*.zip
+*.egg-info/
